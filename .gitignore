@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/venv/
+backend/env/
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Build outputs
+frontend/build/
+frontend/dist/
+*.egg-info/
+
+# Environment variables
+.env
+.env.local
+.env.production
+*.env
+
+# Logs
+*.log
+logs/
+session_logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Package files
+*.egg
+*.wheel
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+EOF
