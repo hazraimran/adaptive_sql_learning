@@ -44,4 +44,6 @@ session_logs/
 temp/
 tmp/
 
+# Service account keys
+backend/serviceAccountKey.json
 
