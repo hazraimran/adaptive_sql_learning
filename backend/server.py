@@ -13,8 +13,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 
-# LOG_DIR = 'session_logs'
-
 # initialize Flask app
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
@@ -25,7 +23,7 @@ CORS(app, resources={r"/*": {"origins": [
 ]}})
 
 
-# INIT FIREBASE 
+# initialize Firestore
 cred = credentials.Certificate(json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]))
 firebase_admin.initialize_app(cred)
 db = firestore.client()
@@ -199,7 +197,7 @@ def end_session():
     duration = end_time - start_time if start_time else 0
     total_attempts = session.get('attempt_count', 0)
     
-    # Calculate session-level average metrics
+    # calculate session-level average metrics
     history: List[Dict[str, Any]] = session.get('session_metrics_history', [])
     session_averages: Dict[str, Any] = {}
     final_cluster_id = -1 
@@ -263,5 +261,5 @@ def end_session():
 
 
 if __name__ == '__main__':
-    print("Starting Flask server on http://127.0.0.1:3001")
-    app.run(port=3001, debug=True)
+    port = int(os.environ.get("PORT", 3001))  
+    app.run(host="0.0.0.0", port=port)

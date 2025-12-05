@@ -29,7 +29,7 @@ const LearnerPersonas: Record<number, Persona> = {
   3: {
       title: "Proficient Learner",
       description: "Your data suggests: very fast typing speed, minimal key-flight time, and the fewest retries.",
-      encouragement: "Excellent! Your learning efficiency and mastery of SQL concepts are impressive. Keep up this fast and precise pace; you are efficiently building a strong skill foundation!"
+      encouragement: "Excellent! Your learning efficiency is impressive. Keep up this fast and precise pace; you are efficiently building a strong skill foundation!"
   },
   // Cluster 2 - Hesitant Explorer
   2: {
@@ -312,7 +312,7 @@ export default function SQLTutor() {
       </button>
     </div>
 
-    {/* --- Database Schema Modal --- */}
+    {/* Database Schema Modal */}
     {showSchema && (
       <div className="modal-overlay" onClick={() => setShowSchema(false)}>
         <div className="schema-modal" onClick={(e) => e.stopPropagation()}>

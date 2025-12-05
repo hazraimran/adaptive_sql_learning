@@ -12,12 +12,12 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 device = "cpu"
 
-# Initialize CodeBERT model and tokenizer
+# initialize CodeBERT model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained("microsoft/codebert-base")
 model = AutoModel.from_pretrained("microsoft/codebert-base").to(device)
 model.eval()
 
-# Load FAISS index and metadata
+# load FAISS index and metadata
 faiss_index = faiss.read_index("helper/db/embeddings_codebert.faiss")
 with open("helper/db/example_meta_codebert.pkl", "rb") as f:
     meta = pickle.load(f)
