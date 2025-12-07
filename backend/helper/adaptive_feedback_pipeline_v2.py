@@ -44,8 +44,6 @@ EMB_PATH = os.path.join(DB_DIR, "example_embeddings_codebert.pkl")
 # # convert to torch tensor and normalize for cosine similarity
 # example_embeddings = torch.tensor(example_embeddings, dtype=torch.float32)
 
-client = OpenAI()
-
 def _load_once():
     global _loaded, _tokenizer, _model, _example_meta, _example_emb, _example_emb_norm
     if _loaded:
@@ -121,7 +119,7 @@ def _embed(text: str) -> torch.Tensor:
 def retrieve_similar_examples(query: str, k=2):
     _load_once()
 
-    emb = _embed(query).squeeze() # [768]
+    emb = _embed(query).squeeze() 
     
     scores = torch.matmul(_example_emb_norm, emb) 
 
@@ -132,7 +130,6 @@ def retrieve_similar_examples(query: str, k=2):
     del emb, scores
     gc.collect()
     return results
-
 
 def build_prompt(query, examples, user_profile):
     SCHEMA = """
