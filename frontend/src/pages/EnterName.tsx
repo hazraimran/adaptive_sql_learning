@@ -14,7 +14,7 @@ export default function EnterName() {
     setLoading(true)
     try {
       // post request to start session
-      const res = await api.post('/start_session', { username }) 
+      const res = await api.post('/start', { username }) 
       const session_id = res.data.session_id
         
       // store username and session_id in sessionStorage

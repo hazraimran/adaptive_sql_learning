@@ -1,0 +1,29 @@
+.schema-card {
+    width: 240px;               
+    padding: 16px;
+    text-align: center;
+    justify-content: center;
+    background: rgba(225, 192, 173, 0.75);
+  }
+  
+  .schema-title {
+    font-size: 23px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  
+  .schema-block {
+    margin-bottom: 16px;
+  }
+  
+  .schema-section {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  
+  .schema-list {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  

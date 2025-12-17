@@ -1,26 +1,32 @@
-import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api } from '../api/client.ts'
-import { useTypingCapture } from '../hooks/useTypingCapture.ts' 
-import './SQLTutor.css'
-import diagram from '../assets/diagram.png'
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../api/client.ts';
+import { useTypingCapture } from '../hooks/useTypingCapture.ts';
+import './SQLTutor.css';
+import QuestionCard from '../components/QuestionCard.tsx';
+import SchemaCard from '../components/SchemaCard.tsx';
+import { db } from './../firebase/setup.ts';
+import { collection, getDocs } from 'firebase/firestore';
 
 interface ResultType {
-    error_type: string;
-    error_subtype: string;
-    personalized_feedback: string;
-}
-
-interface QuitResponseType {
-  status: string;
-  message: string;
-  final_cluster_id: number; 
+  error_type: string;
+  error_subtype: string;
+  personalized_feedback: string;
+  is_correct: boolean;
+  question_cluster_id?: number | null;
 }
 
 interface Persona {
   title: string;
   description: string;
   encouragement: string;
+}
+
+interface Question {
+  task_id: number;
+  title: string;
+  description: string;
+  solution: string;
 }
 
 // Learner profile information based on clusters 0, 1, 2, 3, 4
@@ -57,276 +63,502 @@ const LearnerPersonas: Record<number, Persona> = {
   },
 };
 
+function getPersona(clusterId?: number | null): Persona {
+  if (clusterId != null && clusterId in LearnerPersonas) {
+    return LearnerPersonas[clusterId];
+  }
+  return {
+    title: "General Learner",
+    description: "Insufficient data from this question, or no clear learner profile has been formed yet.",
+    encouragement: "Keep going! Every attempt is a cornerstone of progress. We look forward to your next question to continue exploring and learning SQL!"
+  };
+}
+
+function normalizeSQL(sql: string): string {
+  return sql
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([(),;])\s*/g, '$1')
+    .toUpperCase();
+}
+
+const MAX_ATTEMPTS = 4;
 
 export default function SQLTutor() {
-  const nav = useNavigate()
-  const username = sessionStorage.getItem('username') || ''
-  const session_id = sessionStorage.getItem('session_id') || ''
-  const [query, setQuery] = useState('')
-  const [locked, setLocked] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<ResultType | null>(null) 
-  const [attempts, setAttempts] = useState(0)
- 
-  const [showQuitModal, setShowQuitModal] = useState(false)
-  const [finalClusterId, setFinalClusterId] = useState<number | null>(null) 
-  const [showSchema, setShowSchema] = useState(false);
+  const nav = useNavigate();
+  const username = sessionStorage.getItem('username') || '';
+  const session_id = sessionStorage.getItem('session_id') || '';
 
-  const { events, reset } = useTypingCapture(!locked) 
+  const [query, setQuery] = useState('');
+  const [locked, setLocked] = useState(false);
+  const [loading, setLoading] = useState(false);
 
+  const [result, setResult] = useState<ResultType | null>(null);
+
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [completedQuestions, setCompletedQuestions] = useState<Set<number>>(
+    new Set()
+  );
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const [attemptsMap, setAttemptsMap] = useState<Record<number, number>>({});
+
+  // Modals
+  const [showQuitModal, setShowQuitModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showPityModal, setShowPityModal] = useState(false);
+  const [showAllDoneModal, setShowAllDoneModal] = useState(false);
+
+  const [currentQuestionClusterId, setCurrentQuestionClusterId] = useState<
+    number | null
+  >(null);
+
+  const { events, reset } = useTypingCapture(!locked);
+
+  /** Load questions from Firestore */
   useEffect(() => {
-    if (!username || !session_id) { 
-        nav('/')
-    }
-  }, [username, session_id, nav])
+    (async () => {
+      const snap = await getDocs(collection(db, 'questions'));
+      const list: Question[] = snap.docs
+        .map((d) => ({
+          task_id: Number(d.id ?? d.data().task_id),
+          title: d.data().title,
+          description: d.data().description,
+          solution: d.data().solution,
+        }))
+        .sort((a, b) => a.task_id - b.task_id);
 
+      setQuestions(list);
+      
+      const init: Record<number, number> = {};
+      list.forEach((q) => (init[q.task_id] = 0));
+      setAttemptsMap(init);
+    })().catch((e) => console.error('Load questions failed:', e));
+  }, []);
+
+  /** Guard: missing session */
+  useEffect(() => {
+    if (!username || !session_id) nav('/');
+  }, [username, session_id, nav]);
+
+  /** Derive availableQuestions */
+  const availableQuestions = useMemo(
+    () => questions.filter((q) => !completedQuestions.has(q.task_id)),
+    [questions, completedQuestions]
+  );
+
+  /** Keep currentIndex in range */
+  useEffect(() => {
+    if (availableQuestions.length > 0 && currentIndex >= availableQuestions.length) {
+      console.log('[EFFECT] Correcting currentIndex to 0');
+      setCurrentIndex(0);
+    }
+  }, [availableQuestions.length, currentIndex]);
+
+  const currentQuestion =
+    availableQuestions.length > 0
+      ? availableQuestions[Math.max(0, Math.min(currentIndex, availableQuestions.length - 1))]
+      : null;
+
+  const currentAttempts = currentQuestion
+    ? attemptsMap[currentQuestion.task_id] ?? 0
+    : 0;
+
+  function gotoNextAvailable() {
+    // clear states
+    setCurrentQuestionClusterId(null);
+    setLocked(false);
+    setLoading(false);
+    setQuery('');
+    setResult(null);
+    reset(); 
+    
+    // close modals
+    setShowSuccessModal(false);
+    setShowPityModal(false);
+    
+    // check for next question after a short delay
+    setTimeout(() => {
+        if (availableQuestions.length === 0) {
+            console.log('[GOTO] All questions completed! Showing All Done Modal');
+            setShowAllDoneModal(true);
+        } else {
+            console.log('[GOTO] Moving to next question, setting index to 0');
+            setCurrentIndex(0);
+        }
+    }, 150); 
+  }
+ 
+  /** Attempt counter helpers */
+  function bumpAttempts(taskId: number) {
+    setAttemptsMap((prev) => ({
+      ...prev,
+      [taskId]: (prev[taskId] ?? 0) + 1,
+    }));
+  }
+
+  function markCompleted(taskId: number) {
+    setCompletedQuestions((prev) => new Set([...prev, taskId]));
+  }
+
+  /** Submit */
   async function handleSubmit() {
-    if (!query.trim() || loading || locked) return 
-    
-    setLocked(true)
-    setLoading(true)
+    if (!currentQuestion || !query.trim() || loading || locked) return;
 
-    try {
-      const res = await api.post('/submit_query', { username, session_id, query, events })
-      setResult(res.data as ResultType)
-      setAttempts(a => a + 1)
-      reset()
-    } catch(e) {
-        console.error("Submission failed:", e)
-        setResult({
-            error_type: "API_ERROR",
-            error_subtype: "NETWORK_ERROR",
-            personalized_feedback: "Failed to submit query. Please try again."
-        })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleRetry() {
-    if (loading) return
-    
-    // Unlock for retry
-    setLocked(false)
-    setQuery('') 
+    setLocked(true);
+    setLoading(true);
   
-  }
+    const isCorrect = normalizeSQL(query) === normalizeSQL(currentQuestion.solution);
+    const questionId = currentQuestion.task_id; 
+  
+    try {
+      const res = await api.post('/submit_query', {
+        username,
+        session_id,
+        task_id: questionId,
+        query,
+        events,
+        is_correct: isCorrect,
+      });
+  
+      const feedback = res.data as ResultType;
+    
+      // add attempt
+      bumpAttempts(questionId);
+      const nextAttempts = (attemptsMap[questionId] ?? 0) + 1;
+  
+      // Case A: Correct answer
+      if (isCorrect) {
+        console.log('[SUBMIT] Answer correct!');
+        setResult(null);
+  
+        try {
+          const endRes = await api.post('/end_question', {
+            session_id,
+            task_id: questionId,
+            reason: 'correct'
+          });
+  
+          console.log('[END_QUESTION] Cluster:', endRes.data.question_cluster_id);
+          setCurrentQuestionClusterId(endRes.data.question_cluster_id ?? null);
+        } catch (err) {
+          console.error('[END_QUESTION] Failed:', err);
+          setCurrentQuestionClusterId(null);
+        }
+  
+        // mark completed
+        markCompleted(questionId);
+        
+        // show success modal
+        setShowSuccessModal(true);
+        
+        setLocked(true);
+        setLoading(false);
+        return;
+      }
+  
+      // Case B: Incorrect but attempts remain
+      if (!isCorrect && nextAttempts < MAX_ATTEMPTS) {
+    
+        setResult({
+          error_type: feedback.error_type || "UNKNOWN",
+          error_subtype: feedback.error_subtype || "UNKNOWN",
+          personalized_feedback: feedback.personalized_feedback || "Please try again.",
+          is_correct: false,
+        });
+  
+        setCurrentQuestionClusterId(null);
+        setLocked(true);
+        setLoading(false);
+        return;
+      }
+  
+      // Case C: Incorrect and max attempts reached
+      if (!isCorrect && nextAttempts >= MAX_ATTEMPTS) {
+        setResult(null);
+  
+        try {
+          const endRes = await api.post('/end_question', {
+            session_id,
+            task_id: questionId,
+            reason: 'max_attempts'
+          });
+  
+          setCurrentQuestionClusterId(endRes.data.question_cluster_id ?? null);
+        } catch (err) {
+          console.error('[END_QUESTION] Failed:', err);
+          setCurrentQuestionClusterId(null);
+        }
 
+        markCompleted(questionId);
+        
+        // show pity modal
+        setShowPityModal(true);
+        
+        setLocked(true);
+        setLoading(false);
+        return;
+      }
+      
+    } catch (err) {
+      console.error('[SUBMIT] Error:', err);
+      setResult({
+        is_correct: false,
+        error_type: 'API_ERROR',
+        error_subtype: 'NETWORK_ERROR',
+        personalized_feedback: 'Network error, please retry.',
+      });
+  
+      setLocked(false);
+      setLoading(false);
+    } finally {
+      reset();
+    }
+}
+ 
+  /** Retry */
+  function handleRetry() {
+    if (loading) return;
+    setLocked(false);
+    setQuery('');
+    setResult(null);
+    setCurrentQuestionClusterId(null);
+    reset();
+}
+
+  /** Quit */
   function handleQuit() {
-    if (loading) return
+    if (loading || !currentQuestion) return;
     setShowQuitModal(true);
   }
 
   async function confirmQuit() {
-      setShowQuitModal(false);
-      setLoading(true);
+    if (!currentQuestion) return;
 
-      // send end_session request
-      try {
-          const res = await api.post('/end_session', { username, session_id });
-          const data = res.data as QuitResponseType;
-          
-          // get and set the final cluster ID from the backend
-          setFinalClusterId(data.final_cluster_id); 
-          console.log(`Session ended. Final Cluster ID: ${data.final_cluster_id}`);
-      } catch(e) {
-          console.warn("Failed to end session gracefully:", e);
-          // Use -2 to indicate session end failure
-          setFinalClusterId(-2); 
-      } finally {
-          setLoading(false);
-      }
-  }
+    const completedTaskId = currentQuestion.task_id; 
 
-  function handleCancelQuit() {
-      setShowQuitModal(false);
-  }
+    setShowQuitModal(false);
+    setLoading(true);
 
-  function getClusterPersona(clusterId: number): Persona {
-    if (clusterId in LearnerPersonas) {
-        return LearnerPersonas[clusterId];
+    try {
+        const res = await api.post('/end_question', { 
+            session_id, 
+            task_id: completedTaskId,
+            reason: 'quit'
+        });
+        
+        const payload = res?.data ?? {};
+        setCurrentQuestionClusterId(payload.question_cluster_id ?? null);
+        
+    } catch (e) {
+        console.warn('[end_question] failed:', e);
+        setCurrentQuestionClusterId(null);
+    } finally {
+        markCompleted(completedTaskId);
+        setShowPityModal(true); 
+        setLoading(false);
     }
-    return {
-      title: "General Learner",
-      description: "Insufficient data from this session, or no clear learner profile has been formed yet.",
-      encouragement: "Keep going! Every attempt is a cornerstone of progress. We look forward to your next session to continue exploring and learning SQL!"
-  };
+}
+
+  function cancelQuit() {
+    setShowQuitModal(false);
   }
 
-  // Get the current learner persona info
-  const currentPersona = getClusterPersona(finalClusterId === null ? -1 : finalClusterId);
+  /** All done Exit */
+  async function handleAllDoneExit() {
+    try {
+      await api.post('/end_session', { session_id });
+    } catch (e) {
+      console.error('end_session failed:', e);
+    } finally {
+      sessionStorage.removeItem('username');
+      sessionStorage.removeItem('session_id');
+      nav('/');
+    }
+  }
+  
+  /** Render guards */
+  if (questions.length === 0) {
+    return <div>Loading questions...</div>;
+  }
+
+  /** Personas */
+  const persona = getPersona(currentQuestionClusterId);
 
   return (
     <div className="tutor-bg">
       <h1 className="tutor-title">Adaptive SQL Learning Feedback System</h1>
+
       <div className="tutor-container">
-        <div className="tutor-card query-card">
-          <h2 className="section-title">Enter Your SQL Query</h2>
-          <textarea
-            className="sql-input"
-            placeholder="e.g., SELECT * FROM Employees;"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            disabled={locked || loading}
-          />
-
-          <div className="button-row">
-            <button
-              className="btn-submit"
-              onClick={handleSubmit}
-              disabled={locked || loading || !query.trim()}
-            >
-              {loading ? 'Submitting...' : 'Submit Query'}
-            </button>
-
-            <button
-              className="btn-retry"
-              onClick={handleRetry}
-              disabled={!locked || loading}
-            >
-              Retry
-            </button>
-
-            <button className="btn-quit" onClick={handleQuit} disabled={loading}>
-              Quit
-            </button>
+        <div className="top-row">
+          {/* LEFT: Database Schema */}
+          <div className="sidebar-schema scrollable-sidebar">
+            <SchemaCard />
           </div>
-        </div>
 
-        {result && (
-          <div className="tutor-card combined-card">
-            
-            <h2 className="combined-title">Results</h2>
+          <div className="main-content-area">
+            <div className="question-query-row">
+              {/* Middle: Question + Rules */}
+              <div className="card question-wrapper">
+                {currentQuestion ? (
+                  <QuestionCard
+                    questionNumber={
+                      questions.findIndex((q) => q.task_id === currentQuestion.task_id) + 1
+                    }
+                    title={currentQuestion.title}
+                    description={currentQuestion.description}
+                    attempts={currentAttempts}
+                    maxAttempts={MAX_ATTEMPTS}
+                  />
+                ) : (
+                  <div style={{ padding: 16 }}>No more questions.</div>
+                )}
+                </div>
+                {/* Right: Query input */}
+                <div className="tutor-card query-card">
+                  <h2 className="section-title">Enter Your SQL Query</h2>
+                  <textarea
+                    className="sql-input"
+                    placeholder="e.g., SELECT * FROM Employees;"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    disabled={locked || loading || !currentQuestion}
+                  />
 
-            <p className="field"><strong>Error Type:</strong> {result.error_type}</p>
-            <p className="field"><strong>Error Subtype:</strong> {result.error_subtype}</p>
+                  <div className="button-row">
+                    <button
+                      className="btn-submit"
+                      onClick={handleSubmit}
+                      disabled={locked || loading || !query.trim() || !currentQuestion}
+                    >
+                    {loading ? 'Submitting...' : 'Submit'}
+                    </button>
 
-            <div className="divider"></div>
+                    <button className="btn-retry" onClick={handleRetry} disabled={loading || !currentQuestion}>
+                      Retry
+                    </button>
 
-            <h2 className="combined-title">Feedback</h2>
-            <p className="feedback-text">{result.personalized_feedback}</p>
+                    <button className="btn-quit" onClick={handleQuit} disabled={loading || !currentQuestion}>
+                      Quit
+                    </button>
+                  </div>
+                </div>
+                </div>
 
+                {/* Feedback */}
+                {result && !showSuccessModal && !showPityModal && (
+                  <div className="feedback-card">
+                    <h2 className="combined-title">Results</h2>
+                    <p className="field">
+                      <strong>Error Type:</strong> {result.error_type}
+                    </p>
+                    <p className="field">
+                      <strong>Error Subtype:</strong> {result.error_subtype}
+                    </p>
+
+                    <div className="divider"></div>
+
+                    <h2 className="combined-title">Feedback</h2>
+                    <p className="feedback-text">{result.personalized_feedback}</p>
+
+                  </div>
+                )}
+            </div>
           </div>
-        )}
-        </div>
-
-    {/* Quit Confirmation Modal */}
-    {showQuitModal && (
-      <div className="modal-overlay">
-        <div className="modal-content">
-          <h3 className="modal-title">End Session</h3>
-          
-          <p className="modal-message">
-              Are you sure you want to end this learning session?<br/>
-              Your learner profile will be assessed and displayed after you quit.
-          </p>
-
-          <div className="modal-actions">
-            <button 
-              className="btn-quit" 
-              onClick={confirmQuit}
-              disabled={loading}
-            >
-              Confirm Quit and View Learner Profile
-            </button>
-            <button 
-              className="btn-cancel" 
-              onClick={handleCancelQuit}
-              disabled={loading}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
       </div>
-    )}
-    
-    
-    {/* Final Cluster Result Modal: Only shown after finalClusterId is set successfully */}
-    {finalClusterId !== null && finalClusterId !== -2 && !showQuitModal && (
-      <div className="modal-overlay">
-        <div className="modal-content">
-          <h3 className="modal-title">Learning Session Summary</h3>
-          
-          <p className="modal-cluster">
-              The system observes your learning style trends toward:<br/> 
-              <strong>{currentPersona.title}</strong>
-          </p>
-          <p className="modal-message">
-              {currentPersona.description}
-          </p>
-          <p className="modal-encouragement">
-              <span style={{ fontWeight: 600, color: '#4ade80' }}>Learning Insight:</span> {currentPersona.encouragement}
-          </p>
 
-          <div className="modal-actions">
-            <button 
-              className="btn-quit" 
-              onClick={() => {
-                  setFinalClusterId(null);
-                  // Navigate back to home/login after dismissal
-                  sessionStorage.removeItem('username')
-                  sessionStorage.removeItem('session_id')
-                  nav('/'); 
-              }} 
-              disabled={loading}
-            >
-              Got It
-            </button>
+      {/* Quit Confirmation Modal */}
+      {showQuitModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title">End This Question</h3>
+            <p className="modal-message">
+              Quit will end this question now and we’ll show your learner type
+              based on your current typing data. Continue?
+            </p>
+            <div className="modal-actions">
+              <button className="btn-quit" onClick={confirmQuit} disabled={loading}>
+                Quit & View Learner Type
+              </button>
+              <button className="btn-cancel" onClick={cancelQuit} disabled={loading}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
-    {/* Session End Failed Modal */}
-    {finalClusterId === -2 && !showQuitModal && (
-      <div className="modal-overlay">
-        <div className="modal-content">
-          <h3 className="modal-title">Session End Failed</h3>
-          <p className="modal-message">
-              An error occurred while ending the session. Your learner profile could not be generated. Please try again later.
-          </p>
-          <div className="modal-actions">
-            <button 
-              className="btn-quit" 
-              onClick={() => {
-                  setFinalClusterId(null);
-                  // Navigate back to home/login after dismissal
-                  sessionStorage.removeItem('username')
-                  sessionStorage.removeItem('session_id')
-                  nav('/'); 
-              }} 
-            >
-              Close
-            </button>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title" style={{ color: '#4ade80' }}>
+              🎉 Correct!
+            </h3>
+            <p className="modal-cluster">
+              Your learner type for this question:<br />
+              <strong>{persona.title}</strong>
+            </p>
+            <p className="modal-message">{persona.description}</p>
+            <p className="modal-encouragement">{persona.encouragement}</p>
+
+            <div className="modal-actions">
+              <button
+                className="btn-submit"
+                onClick={() => {
+                    gotoNextAvailable();          
+                }}
+              >
+                Continue
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-  
-    )}
+      )}
 
-    {/* --- Database Schema Button --- */}
-    <div className="schema-button-container">
-      <button className="schema-btn" onClick={() => setShowSchema(true)}>
-        View Database Schema
-      </button>
+      {/* Pity Modal */}
+      {showPityModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title">Keep Going!</h3>
+            <p className="modal-message">
+              This question is now complete. Here’s your learner insight:
+            </p>
+            <p className="modal-cluster">
+              <strong>{persona.title}</strong>
+            </p>
+            <p className="modal-message">{persona.description}</p>
+            <p className="modal-encouragement">{persona.encouragement}</p>
+
+            <div className="modal-actions">
+              <button
+                className="btn-submit"
+                onClick={() => {
+                    gotoNextAvailable();              
+                }}
+              >
+                Next Question
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* All Done Modal */}
+      {showAllDoneModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="modal-title">🎉 All Questions Completed!</h3>
+            <p>You’ve finished all questions. Great work!</p>
+
+            <div className="modal-actions">
+              <button className="btn-submit" onClick={handleAllDoneExit}>
+                Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-
-    {/* Database Schema Modal */}
-    {showSchema && (
-      <div className="modal-overlay" onClick={() => setShowSchema(false)}>
-        <div className="schema-modal" onClick={(e) => e.stopPropagation()}>
-          <span className="modal-close" onClick={() => setShowSchema(false)}>
-          ✕
-          </span>
-          <h3 className="modal-title">Database Schema Diagram</h3>
-
-          <img src={diagram} alt="Database Schema" className="schema-img" />
-        </div>
-      </div>
-    )}
-    </div>
-  )
+  );
 }
-
-  
