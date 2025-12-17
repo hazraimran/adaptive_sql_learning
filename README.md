@@ -6,27 +6,27 @@ This project integrates **React + Flask + Firebase + behavioral analytics** to p
 
 ## Key Features
 
--  **Interactive SQL Practice**
+### Interactive SQL Practice
   - Multiple SQL questions 
   - Built-in database schema reference
   - Fixed attempt limits per question
 
--  **Typing Behavior Capture**
+### Typing Behavior Capture
   - Keystroke-level event tracking
   - Average dwell time & flight time
   - Typing speed (keys/sec)
   - Backspace and delete rates
 
--  **Learner Profile**
+### Learner Profile
   - Behavior-based learner clustering
   - Per-question learner type inference
   - Persona-based encouragement and insights
 
--  **LLM-Assisted Feedback**
+### LLM-Assisted Feedback
   - SQL error type and subtype detection
   - Personalized feedback for incorrect attempts
 
--  **Session Management**
+### Session Management
   - Attempt tracking per question
   - Retry / quit logic
   - Full session lifecycle handling
@@ -44,6 +44,7 @@ This project integrates **React + Flask + Firebase + behavioral analytics** to p
 
 ### Database & Cloud
 - Firebase Firestore
+
 
 ## App Link: https://adaptive-sql-learning.vercel.app/
 
