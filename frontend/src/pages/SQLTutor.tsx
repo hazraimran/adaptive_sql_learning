@@ -509,7 +509,7 @@ export default function SQLTutor() {
               🎉 Correct!
             </h3>
             <p className="modal-cluster">
-              Your learner type for this question:<br />
+              Your learner type for this question is:<br />
               <strong>{persona.title}</strong>
             </p>
             <p className="modal-message">{persona.description}</p>
