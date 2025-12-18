@@ -32,9 +32,9 @@ export default function SchemaCard() {
       <div className="schema-block">
         <h3 className="schema-section">Logs</h3>
         <div className="schema-list">
-          Log_ID(INT) (PK)<br />
-          Employee_ID(INT) (FK)<br />
-          Robot_ID(INT) (FK)<br />
+          Log_ID(INT) PK<br />
+          Employee_ID(INT) FK<br />
+          Robot_ID(INT) FK<br />
           Action_Description(TEXT)<br />
           Timestamp(DATE)
         </div>

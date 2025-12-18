@@ -84,6 +84,8 @@ function normalizeSQL(sql: string): string {
 
 const MAX_ATTEMPTS = 4;
 
+type PityReason = 'max_attempts' | 'quit' | null;
+
 export default function SQLTutor() {
   const nav = useNavigate();
   const username = sessionStorage.getItem('username') || '';
@@ -114,6 +116,8 @@ export default function SQLTutor() {
   >(null);
 
   const { events, reset } = useTypingCapture(!locked);
+  const [pityReason, setPityReason] = useState<PityReason>(null);
+  const [pitySolution, setPitySolution] = useState<string | null>(null);
 
   /** Load questions from Firestore */
   useEffect(() => {
@@ -172,6 +176,8 @@ export default function SQLTutor() {
     setQuery('');
     setResult(null);
     reset(); 
+    setPityReason(null);
+    setPitySolution(null);
     
     // close modals
     setShowSuccessModal(false);
@@ -290,8 +296,10 @@ export default function SQLTutor() {
           setCurrentQuestionClusterId(null);
         }
 
-        markCompleted(questionId);
         
+        setPityReason('max_attempts');
+        setPitySolution(currentQuestion.solution);
+        markCompleted(questionId);
         // show pity modal
         setShowPityModal(true);
         
@@ -355,10 +363,11 @@ export default function SQLTutor() {
         setCurrentQuestionClusterId(null);
     } finally {
         markCompleted(completedTaskId);
+        setPityReason('quit');
         setShowPityModal(true); 
         setLoading(false);
     }
-}
+  }
 
   function cancelQuit() {
     setShowQuitModal(false);
@@ -442,6 +451,10 @@ export default function SQLTutor() {
                       Quit
                     </button>
                   </div>
+                  <p className="query-hint">
+                  Once you submit your query, the editor will be locked to prevent accidental changes. 
+                  Click <strong>Retry</strong> to make another attempt.
+                  </p>
                 </div>
                 </div>
 
@@ -520,26 +533,58 @@ export default function SQLTutor() {
       {showPityModal && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3 className="modal-title">Keep Going!</h3>
-            <p className="modal-message">
-              This question is now complete. Here’s your learner insight:
-            </p>
-            <p className="modal-cluster">
-              <strong>{persona.title}</strong>
-            </p>
-            <p className="modal-message">{persona.description}</p>
-            <p className="modal-encouragement">{persona.encouragement}</p>
+            {pityReason === 'max_attempts' ? (
+              <>
+              <h3 className="modal-title" style={{ color: '#f87171' }}>
+              Out of Attempts
+              </h3>
 
-            <div className="modal-actions">
-              <button
-                className="btn-submit"
-                onClick={() => {
-                    gotoNextAvailable();              
-                }}
-              >
-                Next Question
-              </button>
-            </div>
+              <p >
+                <strong>The correct answer is:</strong>
+              </p>
+
+              <pre className="correct-answer-box">
+                {pitySolution}
+              </pre>
+
+              <p className="modal-cluster">
+                Your learner type for this question:
+                <br />
+                <strong>{persona.title}</strong>
+              </p>
+
+              <p className="modal-message">{persona.description}</p>
+              <p className="modal-encouragement">{persona.encouragement}</p>
+    
+              <div className="modal-actions">
+                <button className="btn-submit" onClick={gotoNextAvailable}>
+                  Next Question
+                </button>
+              </div>
+            </>
+            ) : (
+              <>
+              <h3 className="modal-title">Keep Going!</h3>
+
+              <p className="modal-message">
+                This question is now complete. Here’s your learner insight:
+              </p>
+
+              <p className="modal-cluster">
+                <strong>{persona.title}</strong>
+              </p>
+
+              <p className="modal-message">{persona.description}</p>
+              <p className="modal-encouragement">{persona.encouragement}</p>
+
+              <div className="modal-actions">
+                <button className="btn-submit" onClick={gotoNextAvailable}>
+                  Next Question
+                </button>
+              </div>
+            </>
+            )}
+
           </div>
         </div>
       )}

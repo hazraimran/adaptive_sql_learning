@@ -26,7 +26,7 @@
 }
 
 .tutor-card {
-  padding: 40px 45px;
+  padding: 20px 45px;
   background: rgba(225, 192, 173, 0.75);
   backdrop-filter: blur(14px);
   border-radius: 28px;
@@ -100,9 +100,10 @@
 .button-row {
   display: flex;
   gap: 14px;
-  margin-top: 20px;
+  margin-top: 20px
 }
   
+
 .btn-submit {
   flex: 1;
   background: #050504;
@@ -217,14 +218,6 @@
   align-items: stretch; 
 }
  
-.scrollable-sidebar {
-  width: 500px;
-  max-height: 800px;      
-  overflow-y: auto;       
-  padding-right: 8px;    
-  border-radius: 8px;
-}
-
 /* Question Panel Style */
 .question-card {
   width: 100%;
@@ -257,4 +250,22 @@
 .question-wrapper {
   width: 100%;
 } 
+
+.correct-answer-box {
+  background: #0f172a;
+  color: #e5e7eb;
+  padding: 12px;
+  border-radius: 6px;
+  font-family: monospace;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.query-hint {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  text-align: left;
+  font-weight: bold;
+  
+}
   
