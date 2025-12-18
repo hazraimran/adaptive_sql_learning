@@ -74,30 +74,6 @@ def save_session_end_to_firestore(username, session_id, task_id, log_data):
     except Exception as e:
         print(f"[ERROR] Firestore session end save failed: {e}")
 
-# def write_log_line(log_data: Dict[str, Any]):
-#     try:
-#         username = log_data.get('username')
-#         session_id = log_data.get('session_id')
-        
-#         if not username or not session_id:
-#             print("[ERROR] Log data missing username or session_id, skipping logging.")
-#             return
-
-#         # create user-specific log directory if not exists
-#         user_log_dir = os.path.join(LOG_DIR, username)
-#         if not os.path.exists(user_log_dir):
-#             os.makedirs(user_log_dir)
-            
-#         # log file path
-#         log_file_path = os.path.join(user_log_dir, f'{session_id}.jsonl')
-            
-#         log_json_line = json.dumps(log_data, ensure_ascii=False)
-#         with open(log_file_path, 'a', encoding='utf-8') as f:
-#             f.write(log_json_line + '\n')
-            
-#     except Exception as e:
-#         print(f"[ERROR] Failed to write log line: {e}")
-
 # define routes and logic
 @app.route('/start', methods=['POST'])
 def start_session():
